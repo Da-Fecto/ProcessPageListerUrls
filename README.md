@@ -4,7 +4,7 @@ Create links to specific ListerPages with predefined selector settings. On the m
 
 This is simple module that leans heavy on ProcessPageListerBookmarks.
 
-API usage
+### API usage
 
 ```php
 $listerPage = $pages->get('1234');
@@ -18,3 +18,5 @@ $plus = $modules->get('ProcessPageListerUrls');
 $url = $plus->url($listerPage, $initSelector, $defaultSelector, $columns, $defaultSort);
 
 ```
+
+Thanks @Ryan to point me in the right direction of using Bookmarks.
