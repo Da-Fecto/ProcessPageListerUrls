@@ -1,0 +1,293 @@
+<?php
+
+/**
+ * Class ProcessPageListerUrls
+ *
+ * Copyright 2015 by Martijn Geerts
+ *
+ * ProcessWire 2.x
+ * Copyright (C) 2014 by Ryan Cramer
+ * Licensed under GNU/GPL v2, see LICENSE.TXT
+ *
+ * http://processwire.com
+ *
+ */
+
+class ProcessPageListerUrls extends Process {
+
+	/**
+	 * Module info
+	 *
+	 * @return array Associative array with module information
+	 *
+	 */
+	public static function getModuleInfo() {
+		return array(
+			'title' => 'PLUs (Page Lister URLs)',
+			'summary' => 'Link to listerpages with predefined settings.',
+			'version' => 1,
+			'author' => 'Martijn Geerts',
+			'icon' => 'search-plus',
+			'singular' => true,
+			'autoload' => false,
+			'permission' => 'page-lister',
+			'page' => array(
+				'name' => 'plus',
+				'parent' => 'setup',
+				'title' => 'Page Lister URLs',
+				'template' => 'admin'
+				),
+			);
+	}
+
+	// This module page
+	protected $linkPage;
+
+	/**
+	 * Get the page where this module lives.
+	 *
+	 */
+	public function init() {
+		parent::init(); // always remember to call the parent init
+		$moduleID = $this->wire('modules')->getModuleID($this);
+		$this->linkPage = $this->wire('pages')->get('template=admin, process=' . $moduleID);
+	}
+
+	/**
+	 * ListerProUrl playground, handy for creating ListerProUrls.
+	 *
+	 * @return string Markup
+	 *
+	 */
+	public function ___execute() {
+
+		$modules = $this->wire('modules');
+		$settings = array(
+			'page' => $this->page->url,
+			'urlText' => $this->_("Try your URL.")
+			);
+
+		$this->config->js($this->className(), $settings);
+		$this->wire('processHeadline', $this->_("Page Lister URLs"));
+
+		// Start form
+		$form = $modules->get("InputfieldForm");
+		$form->id = $this->className();
+		$form->label = $this->_("Build a custom ListerPro URL");
+
+		$fs = $modules->get("InputfieldFieldset");
+		$fs->label = $this->_("Build Page Lister URLs");
+
+		$name = 'listerPage';
+		$moduleID = $modules->getModuleID("ProcessPageListerPro");
+		$listers = $this->wire('pages')->find('template=admin, process=' . $moduleID);
+		$field = $modules->get("InputfieldRadios");
+		$field->required = 1;
+		$field->label = $this->_("ListerPro page");
+		$field->collapsed = Inputfield::collapsedBlank;
+		foreach ($listers as $listerPage) $field->addOption($listerPage->id, $listerPage->url);
+		$field->icon = 'file-o';
+		$field->name = $name;
+		$field->id = $name;
+		$fs->add($field);
+
+		$name = 'initSelector';
+		$field = $modules->get("InputfieldSelector");
+		$field->label = $this->_("initSelector");
+		$field->collapsed = Inputfield::collapsedBlank;
+		$field->icon = 'lock';
+		$field->name = $name;
+		$field->counter = 0;
+		$field->id = $name;
+		$fs->add($field);
+
+		$name = 'defaultSelector';
+		$field = $modules->get("InputfieldSelector");
+		$field->label = $this->_("defaultSelector");
+		$field->collapsed = Inputfield::collapsedBlank;
+		$field->icon = 'th-list';
+		$field->name = $name;
+		$field->id = $name;
+		$fs->add($field);
+
+		$name = 'columns';
+		$lister = $modules->get("ProcessPageLister");
+		$field = $lister->buildColumnsField();
+		$field->collapsed = Inputfield::collapsedBlank;
+		$field->description = '';
+		$field->notes = '';
+		$field->name = $name;
+		$field->value = array();
+		$field->id = $name;
+		$fs->add($field);
+
+		$name = 'defaultSort';
+		$field = $modules->get("InputfieldText");
+		$field->label = $this->_("defaultSort");
+		$field->collapsed = Inputfield::collapsedBlank;
+		$field->icon = 'sort';
+		$field->name = $name;
+		$field->id = $name;
+		$fs->add($field);
+		$form->add($fs);
+
+		$fs = $modules->get("InputfieldFieldset");
+		$fs->label = $this->_("Results & API");
+		$name = 'markup';
+		$field = $modules->get("InputfieldMarkup");
+		$field->value = "<div id='url-result'></div>";
+		$field->name = $name;
+		$field->id = $name;
+		$fs->add($field);
+
+		$form->add($fs);
+
+		$fs = $modules->get("InputfieldFieldset");
+		$fs->icon = 'code';
+		$fs->collapsed = Inputfield::collapsedBlank;
+		$fs->label = $this->_("Usage API");
+
+		$name = 'markup';
+		$field = $modules->get("InputfieldMarkup");
+		$field->name = $name;
+		$field->id = $name;
+		$field->value =
+		"<code style='line-height: 1;'>
+		\$listerPage = \$pages->get('1234');<br>
+		\$initSelector = 'template=basic-page';<br>
+		\$defaultSelector = 'title!=ProcessWire, parent.id>1234';<br>
+		\$columns = array('title', 'template', 'parent', 'modified');<br>
+		\$defaultSort = 'modified';<br><br>
+
+		// Get the instance and build the URL. You need only 1 instance to create multiple URLs.<br>
+		\$plus = \$modules->get('ProcessPageListerUrls');<br>
+		\$url = \$plus->url(\$listerPage, \$initSelector, \$defaultSelector, \$columns, \$defaultSort);<br>
+		</code>";
+		$fs->add($field);
+		$form->add($fs);
+
+		return $form->render();
+	}
+
+	/**
+	 * Raw url handling
+	 *
+	 * Process the URL containing $_GET variables cleans the input and creates a bookmark.
+	 * When alles Paletti, redirected to the selected ListProPage.
+	 *
+	 * @return void Redirects to a ListePro page
+	 *
+	 */
+	public function ___executeUrl() {
+
+		// Get cleaned listerpage
+		$listerPageId = $this->input->get->listerPage;
+		if (!ctype_digit("$listerPageId")) {
+			$exception = sprintf('The page %1$s (%2$s) needs a valid listerPage id.', $this->linkPage, $this->className());
+			throw new WireException($exception);
+		} else if ($listerPage = $this->listerPage($listerPageId)) {
+			if (!$listerPage->id) {
+				$exception = sprintf('The page isn\'t a ProcessPageListerPro page.', $this->linkPage, $this->className());
+				throw new WireException($exception);
+			}
+		} else {
+			$exception = 'Should not thrown';
+			throw new WireException($exception);
+		}
+
+		$dirty = $this->input->get->getArray();
+		$clean = array();
+		// We already have a valid listerPage
+		unset($dirty['listerPage']);
+
+		$dirty = wireMinArray($dirty);
+		$arrayAllowedKeys = array('initSelector', 'defaultSelector', 'columns', 'defaultSort');
+
+		foreach ($dirty as $key => $value) {
+			if (is_string($value)) {
+				$value = $this->sanitizer->text($value);
+				// Filter out include for non-superusers
+				if (strpos($value, 'include=') && !($this->wire('user')->isSuperuser())) {
+					$array = explode(',', $value);
+					$array = array_map('trim', $array);
+					$array = array_filter($array, function($k) {
+						// filter include
+						return !(strpos($k, 'include=') === 0);
+					});
+					$value = implode(", ", $array);
+				}
+			// column fields array
+			} else if (is_array($value)) {
+				$array = $value;
+				$value = array();
+				foreach ($array as $fieldName) {
+					$a = explode ('.', $fieldName);
+					if ($fieldName && $this->fields->get($a[0])) {
+						$value[] = $fieldName;
+					}
+				}
+			} else {
+				$value = null;
+			}
+
+			if ($value && in_array($key, $arrayAllowedKeys)) {
+				$clean[$key] = $value;
+			}
+		}
+
+		$url = ProcessPageLister::addSessionBookmark(md5(json_encode($clean)), $clean);
+		$url = $url ? $listerPage->url . '?' . parse_url($url, PHP_URL_QUERY) : '';
+		if($url) $this->session->redirect($url);
+	}
+
+	/**
+	 * Return a valid ProcessPageListerPro or a NullPage
+	 *
+	 * @param mixed Id integer or Page $ListerPage Admin page with ProcessPageListerPro process
+	 * @return Page Valid ListerProPage or NullPage on failing.
+	 *
+	 */
+	public function listerPage($listerPage) {
+		// Check for ID
+		if (!($listerPage instanceof Page)) {
+			if (!ctype_digit("$listerPage")) return new NullPage;
+			$listerPage = wire('pages')->get($listerPage);
+		}
+		if ($listerPage->template != 'admin') return new NullPage;
+		if (!$listerPage->fields->has('process')) return new NullPage;
+		if ($listerPage->process === 'ProcessPageListerPro') return $listerPage;
+		return new NullPage;
+	}
+
+	/**
+	 * Set sessions and returns an url.
+	 *
+	 * @param Page $ListerPage Destination of the URL.
+	 * @param string $initSelector Initial selector string that all further selections are filtered by.
+	 * @param string $defaultSelector Default selector string that appears but MAY be removed or changed.
+	 * @param array $columns Array of column names to show in lister.
+	 * @param string $defaultSort Where to sort on.
+	 * @return string
+	 *
+	 */
+	public function url(Page $listerPage, $initSelector = '', $defaultSelector = '', array $columns = array(), $defaultSort = '') {
+		// Don't give URL to people that don't have page-lister permissions
+		$user = $this->wire('user');
+		if (!$user->isSuperuser() && !$user->hasPermission('page-lister')) return '';
+
+		$ListerPage = $this->listerPage($listerPage);
+
+		// No lister page return empty string
+		if (!$ListerPage->id) return '';
+
+		$query = array(
+			'listerPage' => $listerPage->id,
+			'initSelector' => $initSelector,
+			'defaultSelector' => $defaultSelector,
+			'columns' => $columns,
+			'defaultSort' => $defaultSort,
+			);
+
+		return $this->linkPage->url . "url/?" . http_build_query($query, '', '&');
+	}
+}
