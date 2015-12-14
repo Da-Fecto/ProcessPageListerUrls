@@ -13,7 +13,7 @@
  *
  */
 
-class ProcessPageListerUrls extends Process {
+class ProcessPageListerUrls extends ProcessPageLister {
 
 	/**
 	 * Module info
@@ -42,6 +42,9 @@ class ProcessPageListerUrls extends Process {
 
 	// This module page
 	protected $linkPage;
+
+	// Fieldnames allowed as columns
+	protected $allowedColumns = null;
 
 	/**
 	 * Get the page where this module lives.
@@ -74,9 +77,11 @@ class ProcessPageListerUrls extends Process {
 		$form = $modules->get("InputfieldForm");
 		$form->id = $this->className();
 		$form->label = $this->_("Build a custom ListerPro URL");
+		$form->icon = 'gavel';
 
 		$fs = $modules->get("InputfieldFieldset");
 		$fs->label = $this->_("Build Page Lister URLs");
+		$fs->icon = 'gavel';
 
 		$name = 'listerPage';
 		$moduleID = $modules->getModuleID("ProcessPageListerPro");
@@ -133,6 +138,8 @@ class ProcessPageListerUrls extends Process {
 
 		$fs = $modules->get("InputfieldFieldset");
 		$fs->label = $this->_("Results & API");
+		$fs->icon = 'beer';
+
 		$name = 'markup';
 		$field = $modules->get("InputfieldMarkup");
 		$field->value = "<div id='url-result'></div>";
@@ -170,6 +177,26 @@ class ProcessPageListerUrls extends Process {
 	}
 
 	/**
+	 * Whether or not to allow the given $fields as columns.
+	 *
+	 * @param array $columns Array with column names
+	 * @return array Cleaned array
+	 *
+	 */
+	public function validateColumns(array $columns) {
+		$array = array();
+		foreach ($columns as $fieldName) {
+			$a = explode('.', $fieldName);
+			$field = $this->fields->get($a[0]);
+			if (!($field instanceof Field)) continue;
+
+			if (!$this->allowColumnField($field)) continue;
+			$array[] = $fieldName;
+		}
+		return $array;
+	}
+
+	/**
 	 * Raw url handling
 	 *
 	 * Process the URL containing $_GET variables cleans the input and creates a bookmark.
@@ -180,58 +207,35 @@ class ProcessPageListerUrls extends Process {
 	 */
 	public function ___executeUrl() {
 
-		// Get cleaned listerpage
-		$listerPageId = $this->input->get->listerPage;
-		if (!ctype_digit("$listerPageId")) {
-			$exception = sprintf('The page %1$s (%2$s) needs a valid listerPage id.', $this->linkPage, $this->className());
-			throw new WireException($exception);
-		} else if ($listerPage = $this->listerPage($listerPageId)) {
-			if (!$listerPage->id) {
-				$exception = sprintf('The page isn\'t a ProcessPageListerPro page.', $this->linkPage, $this->className());
-				throw new WireException($exception);
-			}
-		} else {
-			$exception = 'Should not thrown';
-			throw new WireException($exception);
-		}
+		$listerPage = $this->listerPage($this->input->get->listerPage);
+		if (!$listerPage->id) return;
 
-		$dirty = $this->input->get->getArray();
+		$allow = array('initSelector', 'defaultSelector', 'columns', 'defaultSort');
 		$clean = array();
-		// We already have a valid listerPage
-		unset($dirty['listerPage']);
-
-		$dirty = wireMinArray($dirty);
-		$arrayAllowedKeys = array('initSelector', 'defaultSelector', 'columns', 'defaultSort');
+		$dirty = $this->input->get->getArray();
 
 		foreach ($dirty as $key => $value) {
-			if (is_string($value)) {
-				$value = $this->sanitizer->text($value);
-				// Filter out include for non-superusers
-				if (strpos($value, 'include=') && !($this->wire('user')->isSuperuser())) {
-					$array = explode(',', $value);
-					$array = array_map('trim', $array);
-					$array = array_filter($array, function($k) {
-						// filter include
-						return !(strpos($k, 'include=') === 0);
-					});
-					$value = implode(", ", $array);
-				}
-			// column fields array
-			} else if (is_array($value)) {
-				$array = $value;
-				$value = array();
-				foreach ($array as $fieldName) {
-					$a = explode ('.', $fieldName);
-					if ($fieldName && $this->fields->get($a[0])) {
-						$value[] = $fieldName;
-					}
-				}
-			} else {
-				$value = null;
+			if (!in_array($key, $allow)) continue;
+
+			$filtered = null;
+
+			if ($key === 'initSelector' || $key === 'defaultSelector') {
+				// do access stuf, etc.
+				$filtered = $this->validateSelector($value);
+
+			} elseif ($key === 'columns' && is_array($value)) {
+				$filtered = $this->validateColumns($value);
+
+			} elseif ($key === 'defaultSort') {
+				$filtered = $this->sanitizer->selectorValue($value);
 			}
 
-			if ($value && in_array($key, $arrayAllowedKeys)) {
-				$clean[$key] = $value;
+			if ($filtered !== null) {
+				// Validater adds include=unpublished to the selector.
+				if (strpos($filtered, ', include=unpublished') !== false) {
+					$filtered = str_replace(', include=unpublished', '', $filtered);
+				}
+				$clean[$key] = $filtered;
 			}
 		}
 
@@ -255,7 +259,7 @@ class ProcessPageListerUrls extends Process {
 		}
 		if ($listerPage->template != 'admin') return new NullPage;
 		if (!$listerPage->fields->has('process')) return new NullPage;
-		if ($listerPage->process === 'ProcessPageListerPro') return $listerPage;
+		if (strpos('ProcessPageListerPro', $listerPage->process) !== false) return $listerPage;
 		return new NullPage;
 	}
 
