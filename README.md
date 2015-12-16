@@ -7,7 +7,7 @@ This is simple module that leans heavy on ProcessPageListerBookmarks.
 ### API usage
 
 ```php
-// Required lister page (url redirect to this lister)
+// Required lister page (url redirects to this lister)
 $listerPage = $pages->get('1234');
 $initSelector = 'template=basic-page';
 $defaultSelector = 'title!=ProcessWire, parent.id>1234';
