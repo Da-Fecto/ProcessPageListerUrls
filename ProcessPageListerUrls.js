@@ -36,7 +36,16 @@ $(function () {
 	// Clickable headers
 		$labels = $("#ProcessPageListerUrls .InputfieldContent .InputfieldHeader");
 
+	function hasListerPage(selector) {
+		if ('listerPage' in selector) return true;
+		$("#url-result").html("<div>" + config.ProcessPageListerUrls.noListerPage + "</div>");
+		$("#wrap_listerPage").removeClass('InputfieldStateCollapsed');
+		return false;
+	}
+
 	function showResults(selector) {
+
+		if (!hasListerPage(selector)) { return false; }
 
 		var param = jQuery.param(selector),
 			url = config.ProcessPageListerUrls.page + 'url/?' + param,
@@ -89,11 +98,13 @@ $(function () {
 			$inputfields.each(function () {
 				if (this.type === 'radio' && !this.checked) { return; }
 				if (this.type === 'select-multiple') {
-					value = $(this).val();
+					value = $(this).val() || [];
 				 } else {
 					value = this.value;
 				}
-				selector[this.name] = value;
+				if (value.length) {
+					selector[this.name] = value;
+				}
 			});
 			showResults(selector);
 		}, 300);

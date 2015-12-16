@@ -67,7 +67,8 @@ class ProcessPageListerUrls extends ProcessPageLister {
 		$modules = $this->wire('modules');
 		$settings = array(
 			'page' => $this->page->url,
-			'urlText' => $this->_("Try your URL.")
+			'urlText' => $this->_("Try your URL."),
+			'noListerPage' => $this->_("Please select a lister page first.")
 			);
 
 		$this->config->js($this->className(), $settings);
@@ -88,7 +89,7 @@ class ProcessPageListerUrls extends ProcessPageLister {
 		$listers = $this->wire('pages')->find('template=admin, process=' . $moduleID);
 		$field = $modules->get("InputfieldRadios");
 		$field->required = 1;
-		$field->label = $this->_("ListerPro page");
+		$field->label = $this->_("Lister page");
 		$field->collapsed = Inputfield::collapsedBlank;
 		foreach ($listers as $listerPage) $field->addOption($listerPage->id, $listerPage->url);
 		$field->icon = 'file-o';
@@ -137,7 +138,7 @@ class ProcessPageListerUrls extends ProcessPageLister {
 		$form->add($fs);
 
 		$fs = $modules->get("InputfieldFieldset");
-		$fs->label = $this->_("Results & API");
+		$fs->label = $this->_("Result");
 		$fs->icon = 'beer';
 
 		$name = 'markup';
@@ -149,29 +150,30 @@ class ProcessPageListerUrls extends ProcessPageLister {
 
 		$form->add($fs);
 
-		$fs = $modules->get("InputfieldFieldset");
-		$fs->icon = 'code';
-		$fs->collapsed = Inputfield::collapsedBlank;
-		$fs->label = $this->_("Usage API");
+        if ($this->user->isSuperuser()) {
+            $fs = $modules->get("InputfieldFieldset");
+            $fs->icon = 'code';
+            $fs->label = $this->_("Usage API");
+            $name = 'markup';
+            $field = $modules->get("InputfieldMarkup");
+            $field->name = $name;
+            $field->id = $name;
+            $field->value =
+            "<code style='line-height: 1;'>
+            // A lister page (required)<br>
+            \$listerPage = \$pages->get('1234');<br>
+            \$initSelector = 'template=basic-page';<br>
+            \$defaultSelector = 'title!=ProcessWire, parent.id>1234';<br>
+            \$columns = array('title', 'template', 'parent', 'modified');<br>
+            \$defaultSort = 'modified';<br><br>
 
-		$name = 'markup';
-		$field = $modules->get("InputfieldMarkup");
-		$field->name = $name;
-		$field->id = $name;
-		$field->value =
-		"<code style='line-height: 1;'>
-		\$listerPage = \$pages->get('1234');<br>
-		\$initSelector = 'template=basic-page';<br>
-		\$defaultSelector = 'title!=ProcessWire, parent.id>1234';<br>
-		\$columns = array('title', 'template', 'parent', 'modified');<br>
-		\$defaultSort = 'modified';<br><br>
-
-		// Get the instance and build the URL. You need only 1 instance to create multiple URLs.<br>
-		\$plus = \$modules->get('ProcessPageListerUrls');<br>
-		\$url = \$plus->url(\$listerPage, \$initSelector, \$defaultSelector, \$columns, \$defaultSort);<br>
-		</code>";
-		$fs->add($field);
-		$form->add($fs);
+            // Get the instance and build the URL. You need only 1 instance to create multiple URLs.<br>
+            \$plus = \$modules->get('ProcessPageListerUrls');<br>
+            \$url = \$plus->url(\$listerPage, \$initSelector, \$defaultSelector, \$columns, \$defaultSort);<br>
+            </code>";
+            $fs->add($field);
+            $form->add($fs);
+        }
 
 		return $form->render();
 	}
