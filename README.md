@@ -40,6 +40,7 @@ The builded URL is encoded using openssl_encrypt, abstracted and cut in get vari
 
 Be aware that the runtime bookmarks will change settings in your lister config. When you enter the config after using ProcessPageListerUrls and save the lister those settings are also saved, this is the 'nature' of ListerPro
 
+**The software is provided "as is, use at your own risk.**
 
 ### Thanks 
 
