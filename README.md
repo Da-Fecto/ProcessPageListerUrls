@@ -1,6 +1,6 @@
 # ProcessPageListerUrls
 
-Create links to specific ListerPages with predefined selector settings.
+Create links to specific ListerPages with predefined selector, column and sort settings.
 
 ### What the Module does
 
