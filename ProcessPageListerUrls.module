@@ -1,4 +1,4 @@
-<?php
+<?php namespace ProcessWire;
 
 /**
  * Class ProcessPageListerUrls
@@ -13,7 +13,7 @@
  *
  */
 
-class ProcessPageListerUrls extends ProcessPageLister {
+class ProcessPageListerUrls extends ProcessPageLister implements ConfigurableModule {
 
 	/**
 	 * Module info
@@ -25,26 +25,31 @@ class ProcessPageListerUrls extends ProcessPageLister {
 		return array(
 			'title' => 'PLUs (Page Lister URLs)',
 			'summary' => 'Link to listerpages with predefined settings.',
-			'version' => 1,
+			'version' => '0.0.2',
 			'author' => 'Martijn Geerts',
 			'icon' => 'search-plus',
 			'singular' => true,
 			'autoload' => false,
 			'permission' => 'page-lister',
-			'page' => array(
-				'name' => 'plus',
-				'parent' => 'setup',
-				'title' => 'Page Lister URLs',
-				'template' => 'admin'
-				),
 			);
 	}
 
-	// This module page
+	// @var Page See ___execute
 	protected $linkPage;
 
-	// Fieldnames allowed as columns
+	// @var Page ListerPage
+	protected static $listerPage = null;
+
+	// @var string Default cipher method
+	public static $defaultCipherMethod = 'AES-256-CBC';
+
+	// @var array Fieldnames allowed as columns
 	protected $allowedColumns = null;
+
+	public function __construct() {
+		$this->set('cipher_method', self::$defaultCipherMethod);
+		$this->set('iv_size', '');
+	}
 
 	/**
 	 * Get the page where this module lives.
@@ -52,8 +57,8 @@ class ProcessPageListerUrls extends ProcessPageLister {
 	 */
 	public function init() {
 		parent::init(); // always remember to call the parent init
-		$moduleID = $this->wire('modules')->getModuleID($this);
-		$this->linkPage = $this->wire('pages')->get('template=admin, process=' . $moduleID);
+		if (!$this->cipher_method) $this->error("Please select a cipher method in the module configuration.");
+		$this->linkPage = $this->wire('pages')->get('template=admin, process=' . $this->wire('modules')->getModuleID($this));
 	}
 
 	/**
@@ -64,118 +69,108 @@ class ProcessPageListerUrls extends ProcessPageLister {
 	 */
 	public function ___execute() {
 
-		$modules = $this->wire('modules');
-		$settings = array(
-			'page' => $this->page->url,
-			'urlText' => $this->_("Try your URL."),
-			'noListerPage' => $this->_("Please select a lister page first.")
+		$string = '';
+		$alphabet = range('a', 'z');
+		foreach ($alphabet as $letter) {
+			$part = $this->wire('input')->get($letter);
+			if (!$part) break;
+			$string .= $part;
+		}
+
+		$dirty = wireDecodeJSON($this->decrypt(rawurldecode($string)));
+		$listerPage = isset($dirty['listerPage']) ? $this->listerPage($dirty['listerPage']) : $this->wire(new NullPage());
+
+		// return invalid page
+		if (!$listerPage->id) {
+			$message = $this->_("We couldn't load the lister page.");
+			return $this->invalidPage($message);
+		}
+
+		$allow = array('initSelector', 'defaultSelector', 'columns', 'defaultSort');
+		$clean = array();
+
+		foreach ($allow as $key) {
+
+			if (!isset($dirty[$key])) continue;
+
+			$value = $dirty[$key];
+			$sanitized = '';
+
+			if ($key === 'initSelector') {
+				// do access stuf, etc.
+				$sanitized = $this->validateSelector($value);
+
+			} else if ($key === 'defaultSelector') {
+				// do access stuf, etc.
+				$sanitized = $this->validateSelector($value);
+
+			} elseif ($key === 'columns' && is_array($value)) {
+				$sanitized = $this->validateColumns($value);
+
+			} elseif ($key === 'defaultSort') {
+				$sanitized = $this->sanitizer->selectorValue($value);
+			}
+
+			// Assign sanitized value to variables
+			$$key = $sanitized;
+		}
+
+		// Maximum include hidden and not called twice (Bug ListerPro ?)
+		$includeAmount = (int) substr_count($initSelector . $defaultSelector, 'include=');
+
+		if ($includeAmount === 0) {
+			$initSelector . ', include=hidden';
+		} else if ($includeAmount > 1) {
+			$cleanedSelectors = array_map(function($value) {
+				return trim($value);
+			}, array_filter(explode(',', $defaultSelector), function($value) {
+				return strpos($value, 'include=') === false;
+			}));
+
+			$defaultSelector = implode(', ', $cleanedSelectors);
+		}
+
+		$this->wire('session')->set('initSelector', $initSelector);
+
+		$clean = array(
+			'initSelector' => $initSelector,
+			'defaultSelector' => $defaultSelector,
+			'columns' => $columns,
+			'defaultSort' => $defaultSort,
 			);
 
-		$this->config->js($this->className(), $settings);
-		$this->wire('processHeadline', $this->_("Page Lister URLs"));
+		self::$listerPage = $listerPage;
+		$url = self::addSessionBookmarkCustom(md5(json_encode($clean)), $clean);
+		if (!$url) return $this->invalidPage();
+		$this->session->redirect($url);
+	}
 
-		// Start form
-		$form = $modules->get("InputfieldForm");
-		$form->id = $this->className();
-		$form->label = $this->_("Build a custom ListerPro URL");
-		$form->icon = 'gavel';
+	/**
+	 * Given a unique ID and an array of Lister settings (in $bookmark) return a URL to view those pages in Lister
+	 *
+	 * @param string $id ID or name of bookmark
+	 * @param array $bookmark Bookmark data
+	 * @return string Returns URL to Lister with this bookmark or blank on failure (like if user doesn't have access)
+	 *
+	 */
+	public static function addSessionBookmarkCustom($id, array $bookmark) {
 
-		$fs = $modules->get("InputfieldFieldset");
-		$fs->label = $this->_("Build Page Lister URLs");
-		$fs->icon = 'gavel';
+		$user = wire('user');
+		if(!$user->isSuperuser() && !$user->hasPermission('page-lister')) return '';
 
-		$name = 'listerPage';
-		$moduleID = $modules->getModuleID("ProcessPageListerPro");
-		$listers = $this->wire('pages')->find('template=admin, process=' . $moduleID);
-		$field = $modules->get("InputfieldRadios");
-		$field->required = 1;
-		$field->label = $this->_("Lister page");
-		$field->collapsed = Inputfield::collapsedBlank;
-		foreach ($listers as $listerPage) $field->addOption($listerPage->id, $listerPage->url);
-		$field->icon = 'file-o';
-		$field->name = $name;
-		$field->id = $name;
-		$fs->add($field);
+		$maxBookmarks = 30;
+		$bookmarks = wire("session")->get(self::sessionBookmarksName);
+		if(!is_array($bookmarks)) $bookmarks = array();
 
-		$name = 'initSelector';
-		$field = $modules->get("InputfieldSelector");
-		$field->label = $this->_("initSelector");
-		$field->collapsed = Inputfield::collapsedBlank;
-		$field->icon = 'lock';
-		$field->name = $name;
-		$field->counter = 0;
-		$field->id = $name;
-		$fs->add($field);
+		if(count($bookmarks) > $maxBookmarks) {
+			// trim bookmarks to max size
+			$bookmarks = array_slice($bookmarks, -1 * $maxBookmarks, null, true);
+		}
 
-		$name = 'defaultSelector';
-		$field = $modules->get("InputfieldSelector");
-		$field->label = $this->_("defaultSelector");
-		$field->collapsed = Inputfield::collapsedBlank;
-		$field->icon = 'th-list';
-		$field->name = $name;
-		$field->id = $name;
-		$fs->add($field);
+		$bookmarks[$id] = $bookmark;
+		wire("session")->set(self::sessionBookmarksName, $bookmarks);
 
-		$name = 'columns';
-		$lister = $modules->get("ProcessPageLister");
-		$field = $lister->buildColumnsField();
-		$field->collapsed = Inputfield::collapsedBlank;
-		$field->description = '';
-		$field->notes = '';
-		$field->name = $name;
-		$field->value = array();
-		$field->id = $name;
-		$fs->add($field);
-
-		$name = 'defaultSort';
-		$field = $modules->get("InputfieldText");
-		$field->label = $this->_("defaultSort");
-		$field->collapsed = Inputfield::collapsedBlank;
-		$field->icon = 'sort';
-		$field->name = $name;
-		$field->id = $name;
-		$fs->add($field);
-		$form->add($fs);
-
-		$fs = $modules->get("InputfieldFieldset");
-		$fs->label = $this->_("Result");
-		$fs->icon = 'beer';
-
-		$name = 'markup';
-		$field = $modules->get("InputfieldMarkup");
-		$field->value = "<div id='url-result'></div>";
-		$field->name = $name;
-		$field->id = $name;
-		$fs->add($field);
-
-		$form->add($fs);
-
-        if ($this->user->isSuperuser()) {
-            $fs = $modules->get("InputfieldFieldset");
-            $fs->icon = 'code';
-            $fs->label = $this->_("Usage API");
-            $name = 'markup';
-            $field = $modules->get("InputfieldMarkup");
-            $field->name = $name;
-            $field->id = $name;
-            $field->value =
-            "<code style='line-height: 1;'>
-            // A lister page (required)<br>
-            \$listerPage = \$pages->get('1234');<br>
-            \$initSelector = 'template=basic-page';<br>
-            \$defaultSelector = 'title!=ProcessWire, parent.id>1234';<br>
-            \$columns = array('title', 'template', 'parent', 'modified');<br>
-            \$defaultSort = 'modified';<br><br>
-
-            // Get the instance and build the URL. You need only 1 instance to create multiple URLs.<br>
-            \$plus = \$modules->get('ProcessPageListerUrls');<br>
-            \$url = \$plus->url(\$listerPage, \$initSelector, \$defaultSelector, \$columns, \$defaultSort);<br>
-            </code>";
-            $fs->add($field);
-            $form->add($fs);
-        }
-
-		return $form->render();
+		return self::$listerPage->url . "?session_bookmark=$id";
 	}
 
 	/**
@@ -188,6 +183,12 @@ class ProcessPageListerUrls extends ProcessPageLister {
 	public function validateColumns(array $columns) {
 		$array = array();
 		foreach ($columns as $fieldName) {
+			// System columns (name, status, template, templates_id etc... etc...)
+			if (isset($this->systemLabels[$fieldName])) {
+				$array[] = $fieldName;
+				continue;
+			}
+
 			$a = explode('.', $fieldName);
 			$field = $this->fields->get($a[0]);
 			if (!($field instanceof Field)) continue;
@@ -198,58 +199,88 @@ class ProcessPageListerUrls extends ProcessPageLister {
 		return $array;
 	}
 
+
 	/**
-	 * Raw url handling
+	 * Get Initialization Vector size
 	 *
-	 * Process the URL containing $_GET variables cleans the input and creates a bookmark.
-	 * When alles Paletti, redirected to the selected ListProPage.
-	 *
-	 * @return void Redirects to a ListePro page
+	 * @param string $method
+	 * @return mixed Integer on succes
 	 *
 	 */
-	public function ___executeUrl() {
-
-		$listerPage = $this->listerPage($this->input->get->listerPage);
-		if (!$listerPage->id) return;
-
-		$allow = array('initSelector', 'defaultSelector', 'columns', 'defaultSort');
-		$clean = array();
-		$dirty = $this->input->get->getArray();
-
-		foreach ($dirty as $key => $value) {
-			if (!in_array($key, $allow)) continue;
-
-			$filtered = null;
-
-			if ($key === 'initSelector' || $key === 'defaultSelector') {
-				// do access stuf, etc.
-				$filtered = $this->validateSelector($value);
-
-			} elseif ($key === 'columns' && is_array($value)) {
-				$filtered = $this->validateColumns($value);
-
-			} elseif ($key === 'defaultSort') {
-				$filtered = $this->sanitizer->selectorValue($value);
-			}
-
-			if ($filtered !== null) {
-				// Validater adds include=unpublished to the selector.
-				if (strpos($filtered, ', include=unpublished') !== false) {
-					$filtered = str_replace(', include=unpublished', '', $filtered);
-				}
-				$clean[$key] = $filtered;
-			}
+	private function getIvLength($method = null) {
+		if (!$method) throw new WireException("getIvLength needs a method.");
+		$length = openssl_cipher_iv_length($method);
+		if ($length === false && is_string($this->iv_size)) {
+			$this->error("Can't get the cipher initialization vector (iv) length.");
+		} else if ($length === false) {
+			$length = (int) $this->iv_size;
 		}
 
-		$url = ProcessPageLister::addSessionBookmark(md5(json_encode($clean)), $clean);
-		$url = $url ? $listerPage->url . '?' . parse_url($url, PHP_URL_QUERY) : '';
-		if($url) $this->session->redirect($url);
+		return $length;
+	}
+
+	/**
+	 * Encrypt String
+	 *
+	 * @param string $string String to encrypt
+	 * @param string $method Cipher method to use
+	 * @return string Encrypted string
+	 *
+	 */
+	public function encrypt($string, $method = null) {
+		$hash = $this->wire('config')->userAuthSalt;
+		if (!$method) $method = $this->cipher_method;
+		$length = $this->getIvLength($method);
+
+		// will set error
+		if ($length === false) return false;
+		$iv = @mcrypt_create_iv($length, MCRYPT_DEV_URANDOM);
+		$encrypted = @openssl_encrypt($string, $method, $hash, 0, $iv);
+		return ($encrypted === false) ? false : $iv . $encrypted;
+	}
+
+	/**
+	 * Decrypt encrypted string
+	 *
+	 * @param string $string String to encrypt
+	 * @param string $method Cipher method to use
+	 * @return string Decrypted string
+	 *
+	 */
+	public function decrypt($string, $method = null) {
+		if (!$method) $method = $this->cipher_method;
+		$length = $this->getIvLength($method);
+		if (!$length) return false;
+		$iv = substr($string, 0, $length);
+		$string = substr($string, $length);
+		$hash = $this->wire('config')->userAuthSalt;
+		return openssl_decrypt($string, $method, $hash, 0, $iv);
+	}
+
+	/**
+	 * Invalid Listerpage Markup
+	 *
+	 * @param string $message
+	 * @return string
+	 *
+	 */
+	public function invalidPage($message = '') {
+		if (!$message) $message = $this->_("We encountered a problem.");
+	 	$this->headline($this->className());
+		$wrapper = $this->wire('modules')->get('InputfieldForm');
+
+		$f = $this->wire('modules')->get('InputfieldMarkup');
+		$f->set('label', $this->className());
+		$f->set('value', $message);
+		$wrapper->add($f);
+
+		return $wrapper->render();
 	}
 
 	/**
 	 * Return a valid ProcessPageListerPro or a NullPage
 	 *
-	 * @param mixed Id integer or Page $ListerPage Admin page with ProcessPageListerPro process
+	 * @param mixed integer|Page $ListerPage Admin page with ProcessPageListerPro process
 	 * @return Page Valid ListerProPage or NullPage on failing.
 	 *
 	 */
@@ -257,12 +288,12 @@ class ProcessPageListerUrls extends ProcessPageLister {
 		// Check for ID
 		if (!($listerPage instanceof Page)) {
 			if (!ctype_digit("$listerPage")) return new NullPage;
-			$listerPage = wire('pages')->get($listerPage);
+			$listerPage = $this->wire('pages')->get($listerPage);
 		}
 		if ($listerPage->template != 'admin') return new NullPage;
 		if (!$listerPage->fields->has('process')) return new NullPage;
 		if (strpos('ProcessPageListerPro', $listerPage->process) !== false) return $listerPage;
-		return new NullPage;
+		return $this->wire(new NullPage);
 	}
 
 	/**
@@ -277,6 +308,11 @@ class ProcessPageListerUrls extends ProcessPageLister {
 	 *
 	 */
 	public function url(Page $listerPage, $initSelector = '', $defaultSelector = '', array $columns = array(), $defaultSort = '') {
+
+		if (!$this->cipher_method) {
+			return $this->wire('page')->url;
+		}
+
 		// Don't give URL to people that don't have page-lister permissions
 		$user = $this->wire('user');
 		if (!$user->isSuperuser() && !$user->hasPermission('page-lister')) return '';
@@ -294,6 +330,85 @@ class ProcessPageListerUrls extends ProcessPageLister {
 			'defaultSort' => $defaultSort,
 			);
 
-		return $this->linkPage->url . "url/?" . http_build_query($query, '', '&');
+		// Build get string with variables no longer then the max 512 characters
+
+		$encoded = $this->encrypt(wireEncodeJSON($query, true));
+		if ($encoded === false) {
+			$this->error("URL encryption error.");
+			return '';
+		}
+
+		$results = '';
+		$alphabet = range('a', 'z');
+		$string = rawurlencode($encoded);
+		$parts = str_split($string, 256);
+		foreach ($parts as $key => $part) $results .= '&' . $alphabet[$key] . '=' . $part;
+
+		return $this->linkPage->url . "?" . ltrim($results, '&');
+	}
+
+	/**
+	 * Install
+	 *
+	 * Call ___installPage directly (using page in self::getModuleInfo() doesn't work)
+	 *
+	 */
+	public function install() {
+		$name = 'plus';
+		$parent = $this->wire('pages')->get("parent.id=" . $this->wire('config')->adminRootPageID . ", name=setup");
+		$title = self::getModuleInfo()['title'];
+		$template = 'admin';
+		parent::___installPage($name, $parent, $title, $template, array('status' => Page::statusHidden));
+	}
+
+	/**
+	 * Install
+	 *
+	 * Call ___uninstallPage directly (using page in self::getModuleInfo() doesn't work)
+	 *
+	 */
+	public function uninstall() {
+		parent::___uninstallPage();
+	}
+
+	/**
+	 * Module config
+	 *
+	 * @param array $data
+	 * @return InputfieldWrapper
+	 *
+	 */
+	public static function getModuleConfigInputfields(array $data) {
+		$inputfields = new InputfieldWrapper();
+		$cipherMethods = openssl_get_cipher_methods();
+
+		$name = 'cipher_method';
+		$value = isset($data[$name]) ? $data[$name] : self::$defaultCipherMethod;
+		$f = wire('modules')->get("InputfieldSelect");
+		$f->set('label', __("Cipher method"));
+		$f->set('description', __("Cipher method to use for building the URL."));
+		$f->set('required', true);
+		$f->set('name', $name);
+		$f->set('value', $value);
+		$f->addOption('', '');
+		foreach ($cipherMethods as $method) $f->addOption($method, $method);
+		$inputfields->add($f);
+
+		$name = 'iv_size';
+		$value = isset($data[$name]) ? $data[$name] : '';
+		$f = wire('modules')->get("InputfieldInteger");
+		$f->set('label', __("Initialization vector size"));
+		$description =
+		__("In some cases we are unable to determen the initialization vector size based on the cipher method.") . ' ' .
+		__("When we fail, we try it with the given size.");
+		$f->set('description', $description);
+		$f->set('name', $name);
+		$f->set('value', $value);
+		$f->attr('size', '3');
+		$f->attr('type', 'number');
+		$f->attr('style', 'width: 3.5em;');
+		$inputfields->add($f);
+
+		return $inputfields;
 	}
 }
