@@ -6,7 +6,7 @@ Create links to specific ListerPages with predefined selector, column and sort s
 
 This module is intended to be used as helper module within your own modules. The module allows you to create “runtime” bookmarks for ListerPages.
 
-The module has 1 method named **url()** you most-likely will interact with. The method wil build an URL and wil redirect you to a specific ListerPage with predefined selector, column and sort settings.
+The **url()** method wil build an URL and wil redirect you to a specific ListerPage with predefined selector, column and sort settings.
 
 The url method has 5 parameters:
 
@@ -40,9 +40,8 @@ The builded URL is encoded using openssl_encrypt, abstracted and cut in get vari
 
 Be aware that the runtime bookmarks will change settings in your lister config. When you enter the config after using ProcessPageListerUrls and save the lister those settings are also saved, this is the 'nature' of ListerPro
 
-**The software is provided "as is, use at your own risk.**
+### Thanks
 
-### Thanks 
-
-This Module is partly sponsored by Calago, thanks!<br>
-Thanks to Ryan Cramer
+- This Module is partly sponsored by [Calago](http://www.calago.nl/), thanks!<br>
+- Thanks to Arjen Blokzijl for support & testing
+- Thanks to Ryan Cramer
