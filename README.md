@@ -6,7 +6,7 @@ Create links to specific ListerPages with predefined selector, column and sort s
 
 This module is intended to be used as helper module within your own modules. The module allows you to create “runtime” bookmarks for ListerPages.
 
-The **url()** method wil build an URL and wil redirect you to a specific ListerPage with predefined selector, column and sort settings.
+The **url()** method will build an URL and will redirect you to a specific List Page with predefined select, column and sort settings.
 
 The url method has 5 parameters:
 
