@@ -42,6 +42,6 @@ Be aware that the runtime bookmarks will change settings in your lister config. 
 
 ### Thanks
 
-- This Module is partly sponsored by [Calago](http://www.calago.nl/), thanks!<br>
+- This Module is sponsored by [Calago](http://www.calago.nl/), thanks!<br>
 - Thanks to Arjen Blokzijl for support & testing
 - Thanks to Ryan Cramer
