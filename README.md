@@ -13,7 +13,7 @@ The url method has 5 parameters:
 1. **$ListerPage**, Page, Required value, the page where the lister lives.
 2. **$initSelector**, String or empty string, The init selector of the lister.
 3. **$defaultSelector**, String or empty string, The default selector of the lister.
-4. **$defaultSelector**, String or empty string, The default selector of the lister.
+4. **$columns**, array or empty, plain array with fieldnames.
 5. **$defaultSort** String, Where to sort on.
 
 ### API usage
