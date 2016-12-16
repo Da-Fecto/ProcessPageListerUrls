@@ -25,7 +25,7 @@ class ProcessPageListerUrls extends ProcessPageLister implements ConfigurableMod
 		return array(
 			'title' => 'PLUs (Page Lister URLs)',
 			'summary' => 'Link to listerpages with predefined settings.',
-			'version' => '0.0.2',
+			'version' => '0.0.3',
 			'author' => 'Martijn Geerts',
 			'icon' => 'search-plus',
 			'singular' => true,
@@ -138,6 +138,16 @@ class ProcessPageListerUrls extends ProcessPageLister implements ConfigurableMod
 			'columns' => $columns,
 			'defaultSort' => $defaultSort,
 			);
+
+		foreach (array_keys($clean) as $key) {
+			$value = $clean[$key];
+			if ($key === 'columns' && is_string($value)) {
+				bd('no columns');
+				unset($clean[$key]);
+			} else if (!$value) {
+				unset($clean[$key]);
+			}
+		}
 
 		self::$listerPage = $listerPage;
 		$url = self::addSessionBookmarkCustom(md5(json_encode($clean)), $clean);
