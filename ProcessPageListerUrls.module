@@ -3,7 +3,7 @@
 /**
  * Class ProcessPageListerUrls
  *
- * Copyright 2015 by Martijn Geerts
+ * Copyright 2016 by Martijn Geerts
  *
  * ProcessWire 2.x
  * Copyright (C) 2014 by Ryan Cramer
@@ -142,7 +142,6 @@ class ProcessPageListerUrls extends ProcessPageLister implements ConfigurableMod
 		foreach (array_keys($clean) as $key) {
 			$value = $clean[$key];
 			if ($key === 'columns' && is_string($value)) {
-				bd('no columns');
 				unset($clean[$key]);
 			} else if (!$value) {
 				unset($clean[$key]);
