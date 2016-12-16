@@ -20,7 +20,7 @@ The url method has 5 parameters:
 
 ```php
 // Listerpage, the destination.
-$listerPage      = $pages->get('1234');
+$listerPage      = $pages->get(1234);
 $initSelector    = 'template=basic-page';
 $defaultSelector = 'title!=ProcessWire, parent.id>1234';
 $columns         = array('title', 'template', 'parent', 'modified');
